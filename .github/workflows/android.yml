@@ -1,0 +1,48 @@
+name: Peacekeeper
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Android NDK
+        run: |
+          wget -q https://dl.google.com/android/repository/android-ndk-r26d-linux.zip
+          unzip -q android-ndk-r26d-linux.zip
+          echo "ANDROID_NDK_HOME=$PWD/android-ndk-r26d" >> $GITHUB_ENV
+
+      - name: Build
+        run: |
+          $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang++ \
+              src/*.cpp \
+              -pthread -std=c++17 -O3 -ffast-math -DNDEBUG -DVERSION=-1 -DNETWORK_FILE=\"src/default.nn\" \
+              --target=aarch64-linux-android28 \
+              -march=armv8-a \
+              -o peacekeeper-dev -lm
+
+      - name: List build output
+        run: |
+          find . -maxdepth 1 -type f -executable
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: peacekeeper-android-arm64
+          path: peacekeeper-dev
+
+      - name: Create prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-build-${{ github.run_number }}
+          name: Peacekeeper Build ${{ github.run_number }}
+          prerelease: true
+          files: peacekeeper-dev
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
