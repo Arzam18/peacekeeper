@@ -18,6 +18,41 @@ jobs:
           unzip -q android-ndk-r26d-linux.zip
           echo "ANDROID_NDK_HOME=$PWD/android-ndk-r26d" >> $GITHUB_ENV
 
+      - name: Patch thread stack size
+        run: |
+          python3 - <<'EOF'
+          with open('src/main.cpp') as f:
+              content = f.read()
+
+          helper = '''#include <pthread.h>
+
+          template <typename F>
+          void spawn_thread_with_stack(size_t stack_size, F f) {
+              auto* func_ptr = new F(std::move(f));
+              pthread_attr_t attr;
+              pthread_attr_init(&attr);
+              pthread_attr_setstacksize(&attr, stack_size);
+              pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+              pthread_t thread;
+              pthread_create(&thread, &attr, [](void* arg) -> void* {
+                  auto* fp = static_cast<F*>(arg);
+                  (*fp)();
+                  delete fp;
+                  return nullptr;
+              }, func_ptr);
+              pthread_attr_destroy(&attr);
+          }
+          '''
+          content = content.replace('#include <thread>', '#include <thread>\n' + helper)
+
+          old = 'std::thread search{iterative_deepening_base, std::ref(position), std::ref(timer), std::ref(hash), std::ref(move_order), std::ref(move), std::ref(sd), true};\n                search.detach();'
+          new = 'spawn_thread_with_stack(64 * 1024 * 1024, [&]() {\n                    iterative_deepening_base(position, timer, hash, move_order, move, sd, true);\n                });'
+          content = content.replace(old, new)
+
+          with open('src/main.cpp', 'w') as f:
+              f.write(content)
+          EOF
+
       - name: Build
         run: |
           $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang++ \
