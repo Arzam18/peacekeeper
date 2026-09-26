@@ -1,16 +1,95 @@
 #ifndef PEACEKEEPER_SIMD
 #define PEACEKEEPER_SIMD
 
-#if defined(__AVX__) || defined(__AVX2__) || (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512DQ__))
+/*
+ * Peacekeeper SIMD backend.
+ *
+ * x86: AVX/AVX2/AVX512
+ * ARM64: NEON (mandatory in AArch64)
+ *
+ * The ARM path intentionally implements the same arithmetic as the x86
+ * _mm*_madd_epi16 path. No search/evaluation constants are changed.
+ */
+
+#if defined(__aarch64__) || defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#define SIMD
+#define PEACEKEEPER_NEON
+#endif
+
+#if !defined(PEACEKEEPER_NEON) && (defined(__AVX__) || defined(__AVX2__) || (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512DQ__)))
 #include <immintrin.h>
 #define SIMD
+#define PEACEKEEPER_X86_SIMD
 #endif
+
+#ifdef PEACEKEEPER_NEON
+
+#define BIT_ALIGNMENT 128
+#define I16_STRIDE 8
+#define ALIGNMENT 16
+
+using register_type = int16x8_t;
+
+inline register_type register_add_16(register_type a, register_type b) {
+    return vaddq_s16(a, b);
+}
+inline register_type register_sub_16(register_type a, register_type b) {
+    return vsubq_s16(a, b);
+}
+inline register_type register_min_16(register_type a, register_type b) {
+    return vminq_s16(a, b);
+}
+inline register_type register_max_16(register_type a, register_type b) {
+    return vmaxq_s16(a, b);
+}
+inline register_type register_set_16(i16 x) {
+    return vdupq_n_s16(x);
+}
+inline register_type register_mul_16(register_type a, register_type b) {
+    return vmulq_s16(a, b);
+}
+
+/*
+ * Keep the register API bit-compatible with the x86 implementation.
+ * nnue.cpp stores the 32-bit accumulator in the same SIMD register type.
+ */
+inline register_type register_add_32(register_type a, register_type b) {
+    return vreinterpretq_s16_s32(
+        vaddq_s32(vreinterpretq_s32_s16(a), vreinterpretq_s32_s16(b)));
+}
+
+inline register_type register_sub_32(register_type a, register_type b) {
+    return vreinterpretq_s16_s32(
+        vsubq_s32(vreinterpretq_s32_s16(a), vreinterpretq_s32_s16(b)));
+}
+
+/*
+ * Equivalent to _mm_madd_epi16:
+ * [a0*b0+a1*b1, a2*b2+a3*b3, a4*b4+a5*b5, a6*b6+a7*b7]
+ *
+ * The four i32 results are stored bit-for-bit inside the 128-bit
+ * register_type, just like the x86 SIMD backend does.
+ */
+inline register_type register_madd_16(register_type a, register_type b) {
+    const int32x4_t lo = vmull_s16(vget_low_s16(a), vget_low_s16(b));
+    const int32x4_t hi = vmull_s16(vget_high_s16(a), vget_high_s16(b));
+    return vreinterpretq_s16_s32(vpaddq_s32(lo, hi));
+}
+
+inline int32_t register_sum_32(register_type reg) {
+    return vaddvq_s32(vreinterpretq_s32_s16(reg));
+}
+
+#else
 
 #if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512DQ__)
 #define BIT_ALIGNMENT 512
 #elif defined(__AVX2__) || defined(__AVX__)
 #define BIT_ALIGNMENT 256
 #endif
+
+#ifdef PEACEKEEPER_X86_SIMD
 
 #define I16_STRIDE (BIT_ALIGNMENT / 16)
 #define ALIGNMENT (BIT_ALIGNMENT / 8)
@@ -54,4 +133,6 @@ inline int32_t register_sum_32(register_type& reg) {
 }
 #endif
 
+#endif
+#endif
 #endif
