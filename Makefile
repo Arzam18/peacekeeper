@@ -3,23 +3,24 @@ EVALFILE = src/default.nn
 
 SOURCES := src/*.cpp
 
-CXX := g++
+CXX ?= g++
 
-CXXFLAGS := -pthread -std=c++17 -O3 -ffast-math -DNDEBUG -Wl,--stack,33554432 -march=native -static -DVERSION=-1 -DNETWORK_FILE=\"$(EVALFILE)\"
+CXXFLAGS := -std=c++17 -O3 -ffast-math -DNDEBUG -pthread \
+	-DVERSION=-1 -DNETWORK_FILE=\"$(EVALFILE)\"
 
-LINKER :=
+LINKER := -lm
 
-SUFFIX :=
-
-ifeq ($(OS), Windows_NT)
-	SUFFIX := .exe
+# Desktop x86 builds can still use the host CPU.
+ifeq ($(ANDROID),1)
+CXXFLAGS += -march=armv8-a+simd
 else
-	SUFFIX :=
-	LINKER := -lm
+CXXFLAGS += -march=native
 endif
 
-OUT := $(EXE)$(SUFFIX)
-
+OUT := $(EXE)
 
 $(EXE): $(SOURCES)
-	$(CXX) $^ $(CXXFLAGS) -o $(OUT) $(LINKER) 
+	$(CXX) $^ $(CXXFLAGS) -o $(OUT) $(LINKER)
+
+clean:
+	rm -f $(OUT)
