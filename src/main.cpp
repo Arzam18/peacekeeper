@@ -31,6 +31,7 @@ Peacekeeper Chess Engine
 #include <random>
 #include <sstream>
 #include <string>
+#include "stack_thread.h"
 #include <thread>
 #include <vector>
 
@@ -112,7 +113,7 @@ int main(int argc, char *argv[]) {
             chess960 = true;
             int num_threads = stoi(tokens[1]);
             u64 soft_nodes_limit = stoi(tokens[2]);
-            std::vector<std::thread> thread_pool;
+            std::vector<StackThread> thread_pool;
             for (int thread_id = 1; thread_id <= num_threads; ++thread_id) {
                 thread_pool.emplace_back(datagen_thread, thread_id, tokens[3], soft_nodes_limit);
             }
@@ -132,7 +133,7 @@ int main(int argc, char *argv[]) {
         if (tokens[0] == "go") {
             if (std::find(tokens.begin(), tokens.end(), "infinite") != tokens.end()) {
                 timer.reset();
-                std::thread search{iterative_deepening_base, std::ref(position), std::ref(timer), std::ref(hash), std::ref(move_order), std::ref(move), std::ref(sd), true};
+                StackThread search{iterative_deepening_base, std::ref(position), std::ref(timer), std::ref(hash), std::ref(move_order), std::ref(move), std::ref(sd), true};
                 search.detach();
                 continue;
             }
@@ -169,7 +170,7 @@ int main(int argc, char *argv[]) {
                 movetime = std::max(1, movetime); //no negative movetime
             }
             timer.reset(calculate ? std::max(1, std::min((mytime - move_overhead) * 3 / 4, 4 * movetime)) : movetime, calculate ? movetime : 0, nodes / threads, 0, depth);
-            std::thread search{iterative_deepening_base, std::ref(position), std::ref(timer), std::ref(hash), std::ref(move_order), std::ref(move), std::ref(sd), true};
+            StackThread search{iterative_deepening_base, std::ref(position), std::ref(timer), std::ref(hash), std::ref(move_order), std::ref(move), std::ref(sd), true};
             search.detach();
         }
         if (tokens[0] == "isready") {out << "readyok" << std::endl;}
@@ -941,7 +942,7 @@ int iterative_deepening_base(Position& position, Stop_timer& timer, Hashtable& t
     std::vector<NNUE> thread_nnue(threads - 1, NNUE{});
     std::vector<Search_data> thread_sd(threads - 1, Search_data{});
     std::vector<Move> thread_bestmove(threads - 1, Move{});
-    std::vector<std::thread> thread_pool;
+    std::vector<StackThread> thread_pool;
     smp_timer.reset();
     for (int i{}; i < threads - 1; ++i) {
         thread_nnue[i].refresh(position);
