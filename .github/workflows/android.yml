@@ -1,84 +1,81 @@
-name: Peacekeeper
+name: Build Peacekeeper for Android ARM64 NEON
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - "src/**"
+      - "Makefile"
+      - ".github/workflows/android.yml"
 
 permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build-android:
+    runs-on: ubuntu-24.04
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install Android NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-24 build-tools;35.0.0 ndk;27.2.12479018"
+
+      - name: Build ARM64 NEON
+        shell: bash
         run: |
-          wget -q https://dl.google.com/android/repository/android-ndk-r26d-linux.zip
-          unzip -q android-ndk-r26d-linux.zip
-          echo "ANDROID_NDK_HOME=$PWD/android-ndk-r26d" >> $GITHUB_ENV
+          set -euxo pipefail
 
-      - name: Patch thread stack size
+          NDK="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
+          CXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++"
+
+          test -f src/default.nn
+
+          mkdir -p build
+
+          "$CXX" \
+            src/*.cpp \
+            -std=c++17 \
+            -O3 \
+            -ffast-math \
+            -DNDEBUG \
+            -pthread \
+            -march=armv8-a+simd \
+            -fPIE \
+            -pie \
+            -DVERSION=-1 \
+            '-DNETWORK_FILE="src/default.nn"' \
+            -o build/peacekeeper-android-arm64
+
+          file build/peacekeeper-android-arm64
+          readelf -h build/peacekeeper-android-arm64 | grep -E 'Class|Machine'
+          ls -lh build/peacekeeper-android-arm64
+
+      - name: Smoke test with QEMU
+        shell: bash
         run: |
-          python3 - <<'EOF'
-          with open('src/main.cpp') as f:
-              content = f.read()
+          set -euxo pipefail
 
-          helper = '''#include <pthread.h>
+          # The Android executable is dynamically linked against Android's
+          # bionic/libc++. It cannot be executed directly on the Ubuntu runner.
+          # Check the ELF and required dynamic loader instead of falsely
+          # declaring a QEMU/Linux execution test valid.
+          readelf -l build/peacekeeper-android-arm64 | grep 'Requesting program interpreter' || true
 
-          template <typename F>
-          void spawn_thread_with_stack(size_t stack_size, F f) {
-              auto* func_ptr = new F(std::move(f));
-              pthread_attr_t attr;
-              pthread_attr_init(&attr);
-              pthread_attr_setstacksize(&attr, stack_size);
-              pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-              pthread_t thread;
-              pthread_create(&thread, &attr, [](void* arg) -> void* {
-                  auto* fp = static_cast<F*>(arg);
-                  (*fp)();
-                  delete fp;
-                  return nullptr;
-              }, func_ptr);
-              pthread_attr_destroy(&attr);
-          }
-          '''
-          content = content.replace('#include <thread>', '#include <thread>\n' + helper)
-
-          old = 'std::thread search{iterative_deepening_base, std::ref(position), std::ref(timer), std::ref(hash), std::ref(move_order), std::ref(move), std::ref(sd), true};\n                search.detach();'
-          new = 'spawn_thread_with_stack(64 * 1024 * 1024, [&]() {\n                    iterative_deepening_base(position, timer, hash, move_order, move, sd, true);\n                });'
-          content = content.replace(old, new)
-
-          with open('src/main.cpp', 'w') as f:
-              f.write(content)
-          EOF
-
-      - name: Build
+      - name: Package
+        shell: bash
         run: |
-          $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang++ \
-              src/*.cpp \
-              -pthread -std=c++17 -O3 -ffast-math -DNDEBUG -DVERSION=-1 -DNETWORK_FILE=\"src/default.nn\" \
-              --target=aarch64-linux-android28 \
-              -march=armv8-a \
-              -static-libstdc++ \
-              -o peacekeeper-dev -lm
-
-      - name: List build output
-        run: |
-          find . -maxdepth 1 -type f -executable
+          set -euxo pipefail
+          cd build
+          zip -9 peacekeeper-android-arm64.zip peacekeeper-android-arm64
+          sha256sum peacekeeper-android-arm64 peacekeeper-android-arm64.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: peacekeeper-android-arm64
-          path: peacekeeper-dev
-
-      - name: Create prerelease
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: android-build-${{ github.run_number }}
-          name: Peacekeeper Build ${{ github.run_number }}
-          prerelease: true
-          files: peacekeeper-dev
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: peacekeeper-android-arm64-neon
+          path: build/peacekeeper-android-arm64.zip
+          if-no-files-found: error
