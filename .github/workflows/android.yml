@@ -16,25 +16,56 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+      # ------------------------------------------------------------
+      # CHECKOUT
+      # ------------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ------------------------------------------------------------
+      # ANDROID SDK / NDK
+      # ------------------------------------------------------------
       - name: Install Android NDK
         uses: android-actions/setup-android@v3
         with:
-          packages: "platforms;android-24 build-tools;35.0.0 ndk;27.2.12479018"
+          packages: >-
+            platforms;android-24
+            build-tools;35.0.0
+            ndk;27.2.12479018
 
-      - name: Build ARM64 NEON
+      # ------------------------------------------------------------
+      # BUILD
+      # ------------------------------------------------------------
+      - name: Build Peacekeeper ARM64 NEON
         shell: bash
         run: |
           set -euxo pipefail
 
+          echo "========================================"
+          echo "Peacekeeper Android ARM64 NEON"
+          echo "========================================"
+
           NDK="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
-          CXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++"
+
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+
+          CXX="$TOOLCHAIN/bin/aarch64-linux-android24-clang++"
+
+          mkdir -p build
+
+          echo ""
+          echo "Compiler:"
+          "$CXX" --version
+
+          echo ""
+          echo "Checking NNUE network..."
 
           test -f src/default.nn
 
-          mkdir -p build
+          ls -lh src/default.nn
+
+          echo ""
+          echo "Compiling..."
 
           "$CXX" \
             src/*.cpp \
@@ -46,34 +77,162 @@ jobs:
             -march=armv8-a+simd \
             -fPIE \
             -pie \
+            -static-libstdc++ \
             -DVERSION=-1 \
             '-DNETWORK_FILE="src/default.nn"' \
             -o build/peacekeeper-android-arm64
 
-          file build/peacekeeper-android-arm64
-          readelf -h build/peacekeeper-android-arm64 | grep -E 'Class|Machine'
+          echo ""
+          echo "========================================"
+          echo "BUILD COMPLETE"
+          echo "========================================"
+
           ls -lh build/peacekeeper-android-arm64
 
-      - name: Smoke test with QEMU
+      # ------------------------------------------------------------
+      # VERIFY ARM64 ELF
+      # ------------------------------------------------------------
+      - name: Verify ARM64 binary
         shell: bash
         run: |
           set -euxo pipefail
 
-          # The Android executable is dynamically linked against Android's
-          # bionic/libc++. It cannot be executed directly on the Ubuntu runner.
-          # Check the ELF and required dynamic loader instead of falsely
-          # declaring a QEMU/Linux execution test valid.
-          readelf -l build/peacekeeper-android-arm64 | grep 'Requesting program interpreter' || true
+          echo "ELF information:"
+          file build/peacekeeper-android-arm64
 
-      - name: Package
+          echo ""
+          echo "ELF header:"
+          readelf -h build/peacekeeper-android-arm64 | \
+            grep -E "Class|Machine|Type"
+
+          echo ""
+          echo "Dynamic dependencies:"
+          readelf -d build/peacekeeper-android-arm64 || true
+
+          echo ""
+          echo "Checking for libc++_shared.so dependency..."
+
+          if readelf -d build/peacekeeper-android-arm64 | \
+             grep -q "libc++_shared.so"; then
+            echo "ERROR: libc++_shared.so is still required!"
+            exit 1
+          fi
+
+          echo "OK: libc++_shared.so is NOT required."
+
+          echo ""
+          echo "Checking for ARM64 architecture..."
+
+          if ! file build/peacekeeper-android-arm64 | \
+             grep -qi "aarch64"; then
+            echo "ERROR: Binary is not AArch64!"
+            exit 1
+          fi
+
+          echo "OK: AArch64 ARM64 binary."
+
+      # ------------------------------------------------------------
+      # CHECK REQUIRED ANDROID LIBRARIES
+      # ------------------------------------------------------------
+      - name: Check dynamic libraries
         shell: bash
         run: |
           set -euxo pipefail
+
+          echo "Required dynamic libraries:"
+          readelf -d build/peacekeeper-android-arm64 | \
+            grep NEEDED || true
+
+          echo ""
+          echo "The Android system libraries such as libc.so are expected."
+          echo "libc++_shared.so must NOT appear above."
+
+      # ------------------------------------------------------------
+      # STRIP DEBUG INFORMATION
+      # ------------------------------------------------------------
+      - name: Strip binary
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          STRIP="$ANDROID_SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+
+          "$STRIP" \
+            --strip-unneeded \
+            build/peacekeeper-android-arm64
+
+          echo ""
+          echo "Final binary:"
+          ls -lh build/peacekeeper-android-arm64
+
+      # ------------------------------------------------------------
+      # FINAL VERIFICATION AFTER STRIPPING
+      # ------------------------------------------------------------
+      - name: Final verification
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          echo "========================================"
+          echo "FINAL VERIFICATION"
+          echo "========================================"
+
+          file build/peacekeeper-android-arm64
+
+          echo ""
+          echo "Architecture:"
+          readelf -h build/peacekeeper-android-arm64 | \
+            grep -E "Class|Machine"
+
+          echo ""
+          echo "Runtime dependencies:"
+          readelf -d build/peacekeeper-android-arm64 | \
+            grep NEEDED || true
+
+          echo ""
+          echo "Checking libc++..."
+
+          if readelf -d build/peacekeeper-android-arm64 | \
+             grep -q "libc++_shared.so"; then
+            echo "ERROR: libc++_shared.so dependency detected!"
+            exit 1
+          fi
+
+          echo "SUCCESS: libc++ is statically included."
+
+          echo ""
+          echo "Final SHA256:"
+          sha256sum build/peacekeeper-android-arm64
+
+      # ------------------------------------------------------------
+      # PACKAGE
+      # ------------------------------------------------------------
+      - name: Package single binary
+        shell: bash
+        run: |
+          set -euxo pipefail
+
           cd build
-          zip -9 peacekeeper-android-arm64.zip peacekeeper-android-arm64
-          sha256sum peacekeeper-android-arm64 peacekeeper-android-arm64.zip
 
-      - name: Upload artifact
+          zip -9 peacekeeper-android-arm64.zip \
+            peacekeeper-android-arm64
+
+          echo ""
+          echo "Package:"
+          ls -lh peacekeeper-android-arm64.zip
+
+          echo ""
+          echo "Contents:"
+          unzip -l peacekeeper-android-arm64.zip
+
+          echo ""
+          echo "SHA256:"
+          sha256sum peacekeeper-android-arm64.zip
+
+      # ------------------------------------------------------------
+      # UPLOAD
+      # ------------------------------------------------------------
+      - name: Upload Android binary
         uses: actions/upload-artifact@v4
         with:
           name: peacekeeper-android-arm64-neon
