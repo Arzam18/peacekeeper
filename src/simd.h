@@ -1,6 +1,8 @@
 #ifndef PEACEKEEPER_SIMD
 #define PEACEKEEPER_SIMD
 
+#include "typedefs.h"
+
 /*
  * Peacekeeper SIMD backend.
  *

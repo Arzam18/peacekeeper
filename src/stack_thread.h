@@ -1,20 +1,26 @@
 #ifndef PEACEKEEPER_STACK_THREAD
 #define PEACEKEEPER_STACK_THREAD
 
+#if defined(_WIN32)
+// Keep the upstream Windows build working; the custom stack is for Android/POSIX.
+#include <thread>
+using StackThread = std::thread;
+#else
 #include <pthread.h>
 #include <cstddef>
 #include <functional>
+#include <exception>
 #include <stdexcept>
 #include <utility>
 
 /*
- * Android/bionic gives pthread-created threads a much smaller default stack
- * than the 32 MiB stack intended by Peacekeeper's desktop build.
+ * Android/bionic pthread stacks are much smaller than the 32 MiB stack size
+ * the original project requested for its executable. The search worker keeps
+ * the same callable and arguments as std::thread, but receives that stack
+ * budget explicitly. The large NNUE accumulator is separately heap-allocated
+ * in iterative_deepening(), so this stack remains available for recursion.
  *
- * Keep the engine's existing search intact and give every engine-created
- * worker/search thread the same stack budget explicitly.
- *
- * 32 MiB is virtual address space reservation; pages are committed on demand.
+ * The stack reservation is virtual address space; pages are committed on use.
  */
 constexpr std::size_t PEACEKEEPER_THREAD_STACK_SIZE = 32ull * 1024ull * 1024ull;
 
@@ -95,8 +101,8 @@ public:
         }
 
         const std::size_t stack_size =
-            PEACEKEEPER_THREAD_STACK_SIZE < PTHREAD_STACK_MIN
-                ? PTHREAD_STACK_MIN
+            PEACEKEEPER_THREAD_STACK_SIZE < static_cast<std::size_t>(PTHREAD_STACK_MIN)
+                ? static_cast<std::size_t>(PTHREAD_STACK_MIN)
                 : PEACEKEEPER_THREAD_STACK_SIZE;
 
         if (pthread_attr_setstacksize(&attr, stack_size) != 0) {
@@ -150,5 +156,7 @@ public:
         return thread_;
     }
 };
+
+#endif // _WIN32
 
 #endif

@@ -28,6 +28,7 @@ Peacekeeper Chess Engine
 #include <iostream>
 #include <iomanip>
 #include <map>
+#include <memory>
 #include <random>
 #include <sstream>
 #include <string>
@@ -126,9 +127,12 @@ int main(int argc, char *argv[]) {
         }
         if (tokens[0] == "eval") {
             out << position << "HCE:  " << position.static_eval() << std::endl;
-            NNUE nnue;
-            nnue.refresh(position);
-            out << "NNUE: " << nnue.evaluate(position.side_to_move) << std::endl;
+            // NNUE owns a 128-ply accumulator stack (~768 KiB). Keep it on
+            // the heap so small Android pthread stacks are not consumed by
+            // this single local object. Evaluation semantics are unchanged.
+            auto nnue = std::make_unique<NNUE>();
+            nnue->refresh(position);
+            out << "NNUE: " << nnue->evaluate(position.side_to_move) << std::endl;
         }
         if (tokens[0] == "go") {
             if (std::find(tokens.begin(), tokens.end(), "infinite") != tokens.end()) {
@@ -861,9 +865,12 @@ void iterative_deepening(Position& position, Stop_timer& timer, Hashtable& table
     Movelist movelist;
     Search_stack search_stack[96];
     search_stack[4].ply = 0;
-    NNUE nnue;
-    nnue.refresh(position);
-    sd.nnue = &nnue;
+    // A single NNUE object contains 128 accumulators (786,436 bytes).
+    // Allocate it on the heap instead of consuming most of Android's small
+    // default pthread stack. It stays alive for the full search call.
+    auto nnue = std::make_unique<NNUE>();
+    nnue->refresh(position);
+    sd.nnue = nnue.get();
     position.legal_moves(movelist);
     if (movelist.size() == 0) return;
     else {
