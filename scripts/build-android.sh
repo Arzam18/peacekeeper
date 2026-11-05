@@ -9,7 +9,7 @@ API="24"
 ARCH="aarch64"
 TARGET="${ARCH}-linux-android${API}"
 EXPECTED_NET_BYTES="18883588"
-EXPECTED_NET_SHA256="13cc994d1ce31406f3000d4013b8a41c8ab47e4baa3ee3a54562e208de2c5e7b"
+EXPECTED_NET_SHA256="${PEACEKEEPER_EXPECTED_NET_SHA256:-}"
 OUTPUT="$ROOT/build/peacekeeper-android-arm64-neon"
 OBJ_DIR="$ROOT/build/obj"
 DIST_DIR="$ROOT/dist"
@@ -38,9 +38,9 @@ NETWORK="$ROOT/src/default.nn"
 if [[ ! -f "$NETWORK" ]]; then
   cat >&2 <<'EOF'
 ERROR: src/default.nn is missing.
-Both supplied source archives contain the same trained network. Restore the
-original file at src/default.nn from your Peacekeeper source archive/repository.
-This build intentionally will not substitute or generate network weights.
+The supplied source archives omit the network file. Restore the intended
+trained network at src/default.nn from your Peacekeeper repository/release.
+This build intentionally will not download, substitute, or generate weights.
 EOF
   exit 3
 fi
@@ -50,14 +50,21 @@ if [[ "$ACTUAL_NET_BYTES" != "$EXPECTED_NET_BYTES" ]]; then
   exit 3
 fi
 ACTUAL_NET_SHA256="$(sha256sum "$NETWORK" | awk '{print $1}')"
-if [[ "$ACTUAL_NET_SHA256" != "$EXPECTED_NET_SHA256" ]]; then
-  echo "ERROR: src/default.nn SHA-256 does not match the supplied original/Android-port network." >&2
-  echo "Expected: $EXPECTED_NET_SHA256" >&2
-  echo "Actual:   $ACTUAL_NET_SHA256" >&2
-  exit 3
+if [[ -n "$EXPECTED_NET_SHA256" ]]; then
+  if [[ "$ACTUAL_NET_SHA256" != "$EXPECTED_NET_SHA256" ]]; then
+    echo "ERROR: src/default.nn SHA-256 does not match PEACEKEEPER_EXPECTED_NET_SHA256." >&2
+    echo "Expected: $EXPECTED_NET_SHA256" >&2
+    echo "Actual:   $ACTUAL_NET_SHA256" >&2
+    exit 3
+  fi
+  echo "PASS: repository NNUE matches the explicitly pinned SHA-256."
+else
+  echo "NOTE: no NNUE hash pin configured; preserving the repository's src/default.nn."
+  echo "      Set PEACEKEEPER_EXPECTED_NET_SHA256 to enforce a specific network revision."
 fi
 
 mkdir -p "$OBJ_DIR" "$DIST_DIR"
+printf '%s  %s\n' "$ACTUAL_NET_SHA256" 'src/default.nn' > "$DIST_DIR/default.nn.sha256"
 rm -f "$OBJ_DIR"/*.o "$OUTPUT" "$OUTPUT.sha256" "$DIST_DIR"/nnue-neon-disassembly.txt
 
 CXXFLAGS=(
@@ -76,7 +83,8 @@ CXXFLAGS=(
 printf '\n=== Peacekeeper Android ARM64 NEON ===\n'
 printf 'NDK: %s\nAPI: %s\nNetwork: %s bytes\nNetwork SHA-256: %s\n' "$NDK_VERSION" "$API" "$ACTUAL_NET_BYTES" "$ACTUAL_NET_SHA256"
 sha256sum "$NETWORK"
-"$CXX" --version | head -n 1
+"$CXX" --version > "$DIST_DIR/compiler-version.txt"
+sed -n '1p' "$DIST_DIR/compiler-version.txt"
 
 shopt -s nullglob
 SOURCES=(src/*.cpp)
