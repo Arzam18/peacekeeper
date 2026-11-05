@@ -5,7 +5,7 @@ SOURCES := src/*.cpp
 
 CXX ?= g++
 
-CXXFLAGS := -std=c++17 -O3 -ffast-math -DNDEBUG -pthread \
+CXXFLAGS := -std=c++17 -O3 -ffast-math -DNDEBUG -pthread -fno-strict-aliasing \
 	-DVERSION=-1 -DNETWORK_FILE=\"$(EVALFILE)\"
 
 LINKER := -lm
