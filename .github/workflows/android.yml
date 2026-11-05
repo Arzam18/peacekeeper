@@ -31,6 +31,10 @@ jobs:
 
       - name: Build and verify Peacekeeper
         shell: bash
+        env:
+          # Optional repository variable. Leave unset to keep the repository's
+          # own same-layout trained network and record its SHA-256 instead.
+          PEACEKEEPER_EXPECTED_NET_SHA256: ${{ vars.PEACEKEEPER_EXPECTED_NET_SHA256 }}
         run: bash scripts/build-android.sh
 
       - name: Upload Android ARM64 NEON executable
@@ -42,5 +46,7 @@ jobs:
             dist/peacekeeper-android-arm64-neon.sha256
             dist/nnue-neon-disassembly.txt
             dist/elf-header.txt
+            dist/default.nn.sha256
+            dist/compiler-version.txt
           if-no-files-found: error
           retention-days: 30
