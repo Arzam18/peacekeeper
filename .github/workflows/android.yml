@@ -2,239 +2,45 @@ name: Build Peacekeeper for Android ARM64 NEON
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "src/**"
-      - "Makefile"
-      - ".github/workflows/android.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-android:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
-      # ------------------------------------------------------------
-      # CHECKOUT
-      # ------------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ------------------------------------------------------------
-      # ANDROID SDK / NDK
-      # ------------------------------------------------------------
-      - name: Install Android NDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: >-
-            platforms;android-24
-            build-tools;35.0.0
-            ndk;27.2.12479018
-
-      # ------------------------------------------------------------
-      # BUILD
-      # ------------------------------------------------------------
-      - name: Build Peacekeeper ARM64 NEON
+      - name: Install Android NDK r27c
         shell: bash
         run: |
-          set -euxo pipefail
+          set -euo pipefail
+          NDK_ARCHIVE="$RUNNER_TEMP/android-ndk-r27c-linux.zip"
+          NDK_ROOT="$RUNNER_TEMP/android-ndk-r27c"
+          curl --fail --location --retry 3 \
+            https://dl.google.com/android/repository/android-ndk-r27c-linux.zip \
+            --output "$NDK_ARCHIVE"
+          mkdir -p "$NDK_ROOT"
+          unzip -q "$NDK_ARCHIVE" -d "$NDK_ROOT"
+          echo "ANDROID_NDK_HOME=$NDK_ROOT/android-ndk-r27c" >> "$GITHUB_ENV"
+          test -x "$NDK_ROOT/android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++"
 
-          echo "========================================"
-          echo "Peacekeeper Android ARM64 NEON"
-          echo "========================================"
-
-          NDK="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
-
-          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
-
-          CXX="$TOOLCHAIN/bin/aarch64-linux-android24-clang++"
-
-          mkdir -p build
-
-          echo ""
-          echo "Compiler:"
-          "$CXX" --version
-
-          echo ""
-          echo "Checking NNUE network..."
-
-          test -f src/default.nn
-
-          ls -lh src/default.nn
-
-          echo ""
-          echo "Compiling..."
-
-          "$CXX" \
-            src/*.cpp \
-            -std=c++17 \
-            -O3 \
-            -ffast-math \
-            -DNDEBUG \
-            -pthread \
-            -march=armv8-a+simd \
-            -fPIE \
-            -pie \
-            -static-libstdc++ \
-            -DVERSION=-1 \
-            '-DNETWORK_FILE="src/default.nn"' \
-            -o build/peacekeeper-android-arm64
-
-          echo ""
-          echo "========================================"
-          echo "BUILD COMPLETE"
-          echo "========================================"
-
-          ls -lh build/peacekeeper-android-arm64
-
-      # ------------------------------------------------------------
-      # VERIFY ARM64 ELF
-      # ------------------------------------------------------------
-      - name: Verify ARM64 binary
+      - name: Build and verify Peacekeeper
         shell: bash
-        run: |
-          set -euxo pipefail
+        run: bash scripts/build-android.sh
 
-          echo "ELF information:"
-          file build/peacekeeper-android-arm64
-
-          echo ""
-          echo "ELF header:"
-          readelf -h build/peacekeeper-android-arm64 | \
-            grep -E "Class|Machine|Type"
-
-          echo ""
-          echo "Dynamic dependencies:"
-          readelf -d build/peacekeeper-android-arm64 || true
-
-          echo ""
-          echo "Checking for libc++_shared.so dependency..."
-
-          if readelf -d build/peacekeeper-android-arm64 | \
-             grep -q "libc++_shared.so"; then
-            echo "ERROR: libc++_shared.so is still required!"
-            exit 1
-          fi
-
-          echo "OK: libc++_shared.so is NOT required."
-
-          echo ""
-          echo "Checking for ARM64 architecture..."
-
-          if ! file build/peacekeeper-android-arm64 | \
-             grep -qi "aarch64"; then
-            echo "ERROR: Binary is not AArch64!"
-            exit 1
-          fi
-
-          echo "OK: AArch64 ARM64 binary."
-
-      # ------------------------------------------------------------
-      # CHECK REQUIRED ANDROID LIBRARIES
-      # ------------------------------------------------------------
-      - name: Check dynamic libraries
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          echo "Required dynamic libraries:"
-          readelf -d build/peacekeeper-android-arm64 | \
-            grep NEEDED || true
-
-          echo ""
-          echo "The Android system libraries such as libc.so are expected."
-          echo "libc++_shared.so must NOT appear above."
-
-      # ------------------------------------------------------------
-      # STRIP DEBUG INFORMATION
-      # ------------------------------------------------------------
-      - name: Strip binary
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          STRIP="$ANDROID_SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
-
-          "$STRIP" \
-            --strip-unneeded \
-            build/peacekeeper-android-arm64
-
-          echo ""
-          echo "Final binary:"
-          ls -lh build/peacekeeper-android-arm64
-
-      # ------------------------------------------------------------
-      # FINAL VERIFICATION AFTER STRIPPING
-      # ------------------------------------------------------------
-      - name: Final verification
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          echo "========================================"
-          echo "FINAL VERIFICATION"
-          echo "========================================"
-
-          file build/peacekeeper-android-arm64
-
-          echo ""
-          echo "Architecture:"
-          readelf -h build/peacekeeper-android-arm64 | \
-            grep -E "Class|Machine"
-
-          echo ""
-          echo "Runtime dependencies:"
-          readelf -d build/peacekeeper-android-arm64 | \
-            grep NEEDED || true
-
-          echo ""
-          echo "Checking libc++..."
-
-          if readelf -d build/peacekeeper-android-arm64 | \
-             grep -q "libc++_shared.so"; then
-            echo "ERROR: libc++_shared.so dependency detected!"
-            exit 1
-          fi
-
-          echo "SUCCESS: libc++ is statically included."
-
-          echo ""
-          echo "Final SHA256:"
-          sha256sum build/peacekeeper-android-arm64
-
-      # ------------------------------------------------------------
-      # PACKAGE
-      # ------------------------------------------------------------
-      - name: Package single binary
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          cd build
-
-          zip -9 peacekeeper-android-arm64.zip \
-            peacekeeper-android-arm64
-
-          echo ""
-          echo "Package:"
-          ls -lh peacekeeper-android-arm64.zip
-
-          echo ""
-          echo "Contents:"
-          unzip -l peacekeeper-android-arm64.zip
-
-          echo ""
-          echo "SHA256:"
-          sha256sum peacekeeper-android-arm64.zip
-
-      # ------------------------------------------------------------
-      # UPLOAD
-      # ------------------------------------------------------------
-      - name: Upload Android binary
+      - name: Upload Android ARM64 NEON executable
         uses: actions/upload-artifact@v4
         with:
           name: peacekeeper-android-arm64-neon
-          path: build/peacekeeper-android-arm64.zip
+          path: |
+            build/peacekeeper-android-arm64-neon.zip
+            dist/peacekeeper-android-arm64-neon.sha256
+            dist/nnue-neon-disassembly.txt
+            dist/elf-header.txt
           if-no-files-found: error
+          retention-days: 30
