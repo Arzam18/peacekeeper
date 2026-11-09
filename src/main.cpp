@@ -58,7 +58,8 @@ int main(int argc, char *argv[]) {
     std::atomic<bool>& stop = timer.stop;
     std::string command, token;
     std::vector<std::string> tokens;
-    std::cout << "peacekeeper by sazgr" << std::endl;
+    // Keep the UCI protocol stream clean: startup diagnostics belong on stderr.
+    std::cerr << "peacekeeper by sazgr" << std::endl;
     if (argc > 1 && std::string{argv[1]} == "bench") {
         const static std::array<std::string, 20> fens = {
             "r3k2r/2pb1ppp/2pp1q2/p7/1nP1B3/1P2P3/P2N1PPP/R2QK2R w KQkq a6 0 14",

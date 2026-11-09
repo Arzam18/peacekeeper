@@ -3,6 +3,12 @@
 
 #include "typedefs.h"
 
+// AArch64 always has Advanced SIMD. Refuse an AArch64 build if the compiler
+// does not expose the NEON feature macro instead of silently selecting scalar.
+#if defined(__aarch64__) && !defined(__ARM_NEON) && !defined(__ARM_NEON__)
+#error "Peacekeeper AArch64 builds must enable the NEON/Advanced SIMD path"
+#endif
+
 /*
  * Peacekeeper SIMD backend.
  *

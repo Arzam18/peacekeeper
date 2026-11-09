@@ -35,6 +35,11 @@ inline void print_uci(std::ostream& out, int score, int depth, u64 nodes, int np
 }
 
 inline void print_info(std::ostream& out) {
+#ifdef PEACEKEEPER_BUILD_DATE
+    // Android builds stamp the selected workflow_dispatch date into the UCI
+    // identity. The upstream VERSION macro remains independent of this date.
+    out << "id name Peacekeeper v" << PEACEKEEPER_BUILD_DATE << '\n';
+#else
     if (VERSION == -1) { //special case for OB makefile compile
         out << "id name Peacekeeper vOB\n";
     } else if (VERSION == 0) {
@@ -44,6 +49,7 @@ inline void print_info(std::ostream& out) {
     } else { //intermediate version
         out << "id name Peacekeeper v" << std::fixed << std::setprecision(4) << VERSION << std::defaultfloat << std::setprecision(6) << '\n';
     }
+#endif
     out << "id author Kyle Zhang" << '\n'
         << "option name Hash type spin default 1 min 1 max 1048576" << '\n'
         << "option name Threads type spin default 1 min 1 max 256" << '\n'
