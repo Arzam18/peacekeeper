@@ -21,6 +21,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Diagnose Peacekeeper NNUE source
+        shell: bash
+        run: bash scripts/diagnose-network.sh
+
       - name: Install Android NDK r27c
         shell: bash
         run: |
@@ -48,6 +52,15 @@ jobs:
           name: peacekeeper-android-arm64-neon-${{ inputs.uci_date }}
           path: build/peacekeeper-android-arm64-neon
           if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload network diagnostics (also when build fails)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: peacekeeper-network-diagnostics-${{ inputs.uci_date }}
+          path: dist/network-diagnostics.txt
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Upload verification report
