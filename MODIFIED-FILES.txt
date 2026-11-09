@@ -1,15 +1,10 @@
-Peacekeeper Android ARM64 NEON Stage 1 — modified files only
+Peacekeeper Android ARM64 NEON — fork network checksum correction
 
-Upload these files to the root of the Peacekeeper repository, preserving paths:
- - .github/workflows/android.yml
+Upload these changed files to the root of the Peacekeeper repository, preserving paths:
  - scripts/build-android.sh
  - scripts/diagnose-network.sh
- - src/simd.h
- - src/uci.h
- - src/main.cpp
  - ANDROID-ARM64-COMPILATION.md
- - FALCON-ENGINE-COMPILATION-RULES.md
 
-The original `src/default.nn` is intentionally not included. Keep the correct network in the repository; the build script validates 18,883,588 bytes and SHA-256 13cc994d1ce31406f3000d4013b8a41c8ab47e4baa3ee3a54562e208de2c5e7b.
+The current `Arzam18/peacekeeper` fork network `src/default.nn` was confirmed in commit `883249d17e0ec5b3d0f8efa77e9a8fec3d7eab05`. It is 18,883,588 bytes and has SHA-256 `4e65641f0a32034822d514f959a7ac101cc70491fb4dfdd4a8368a9c6e7524d8`. The old pin (`13cc994d...`) referred to a different network revision and is replaced with this exact fork network identity.
 
-This diagnostic-only update adds scripts/diagnose-network.sh and updates .github/workflows/android.yml. It reports commit provenance, file size, SHA-256, file type, Git tracking/status, and the network blob recorded in HEAD. The build remains fail-closed until the network identity is verified.
+The build remains strict: it checks both size and SHA-256 and will fail on any different model. The build metadata also records the checked-out Git remote and commit. No network file is included or overwritten by this patch.

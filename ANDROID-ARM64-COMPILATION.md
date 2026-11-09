@@ -2,7 +2,7 @@
 
 ## Scope
 
-This guide documents the baseline Android ARM64 build for the supplied Peacekeeper v3.01-based source snapshot. The baseline target is AArch64 Android API 24 with mandatory AArch64 Advanced SIMD (NEON). This is the first build stage; it does not claim ARM DotProd support.
+This guide documents the baseline Android ARM64 build for the Peacekeeper source in the user's `Arzam18/peacekeeper` fork. The baseline target is AArch64 Android API 24 with mandatory AArch64 Advanced SIMD (NEON). This is the first build stage; it does not claim ARM DotProd support.
 
 ## Required source and model
 
@@ -14,11 +14,11 @@ This guide documents the baseline Android ARM64 build for the supplied Peacekeep
 - Build script: `scripts/build-android.sh`
 - GitHub Actions workflow: `.github/workflows/android.yml`
 
-The source archive supplied for this package did not include `src/default.nn`. The expected existing model is exactly 18,883,588 bytes with SHA-256:
+The verified network source is [`Arzam18/peacekeeper/src/default.nn`](https://github.com/Arzam18/peacekeeper/blob/main/src/default.nn). In the diagnostics run, it was tracked in commit `883249d17e0ec5b3d0f8efa77e9a8fec3d7eab05`, with 18,883,588 bytes and SHA-256:
 
-`13cc994d1ce31406f3000d4013b8a41c8ab47e4baa3ee3a54562e208de2c5e7b`
+`4e65641f0a32034822d514f959a7ac101cc70491fb4dfdd4a8368a9c6e7524d8`
 
-Do not create a dummy model, substitute another Peacekeeper network, or silently download an unverified model. Keep the correct file in the repository at `src/default.nn`. The build stops if it is absent or does not match the pinned identity.
+The build now pins this fork network identity. Do not create a dummy model, substitute another network, or silently download weights. The build stops if `src/default.nn` is absent or does not match the pinned size and checksum. If the network is intentionally changed later, verify the new model against the matching source before updating the pin.
 
 ## Toolchain
 
