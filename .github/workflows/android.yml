@@ -2,6 +2,12 @@ name: Build Peacekeeper for Android ARM64 NEON
 
 on:
   workflow_dispatch:
+    inputs:
+      uci_date:
+        description: "Peacekeeper UCI version/date (YYYYMMDD)"
+        required: true
+        default: "20261109"
+        type: string
 
 permissions:
   contents: read
@@ -32,21 +38,28 @@ jobs:
       - name: Build and verify Peacekeeper
         shell: bash
         env:
-          # Optional repository variable. Leave unset to keep the repository's
-          # own same-layout trained network and record its SHA-256 instead.
-          PEACEKEEPER_EXPECTED_NET_SHA256: ${{ vars.PEACEKEEPER_EXPECTED_NET_SHA256 }}
+          UCI_DATE: ${{ inputs.uci_date }}
         run: bash scripts/build-android.sh
 
+      # Keep the downloadable engine artifact engine-only: exactly one binary.
       - name: Upload Android ARM64 NEON executable
         uses: actions/upload-artifact@v4
         with:
-          name: peacekeeper-android-arm64-neon
+          name: peacekeeper-android-arm64-neon-${{ inputs.uci_date }}
+          path: build/peacekeeper-android-arm64-neon
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: peacekeeper-arm64-neon-verification-${{ inputs.uci_date }}
           path: |
-            build/peacekeeper-android-arm64-neon.zip
             dist/peacekeeper-android-arm64-neon.sha256
             dist/nnue-neon-disassembly.txt
             dist/elf-header.txt
             dist/default.nn.sha256
             dist/compiler-version.txt
+            dist/build-metadata.txt
           if-no-files-found: error
           retention-days: 30
