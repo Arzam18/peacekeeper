@@ -14,7 +14,7 @@ REPORT="dist/network-diagnostics.txt"
   git log -1 --format='%H %cs %s' -- src/default.nn 2>/dev/null || true
   echo
   echo "Expected network bytes: 18883588"
-  echo "Expected network SHA-256: 13cc994d1ce31406f3000d4013b8a41c8ab47e4baa3ee3a54562e208de2c5e7b"
+  echo "Expected network SHA-256: 4e65641f0a32034822d514f959a7ac101cc70491fb4dfdd4a8368a9c6e7524d8"
   echo
   if [[ ! -f src/default.nn ]]; then
     echo "Network status: MISSING"

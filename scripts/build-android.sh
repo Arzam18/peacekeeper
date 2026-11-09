@@ -9,7 +9,7 @@ API="24"
 ARCH="aarch64"
 TARGET="${ARCH}-linux-android${API}"
 EXPECTED_NET_BYTES="18883588"
-EXPECTED_NET_SHA256="13cc994d1ce31406f3000d4013b8a41c8ab47e4baa3ee3a54562e208de2c5e7b"
+EXPECTED_NET_SHA256="4e65641f0a32034822d514f959a7ac101cc70491fb4dfdd4a8368a9c6e7524d8"
 UCI_DATE="${UCI_DATE:-}"
 OUTPUT="$ROOT/build/peacekeeper-android-arm64-neon"
 OBJ_DIR="$ROOT/build/obj"
@@ -166,9 +166,13 @@ fi
 echo "PASS: no libc++_shared.so dependency."
 
 sha256sum "$OUTPUT" > "$DIST_DIR/peacekeeper-android-arm64-neon.sha256"
+SOURCE_REMOTE="$(git config --get remote.origin.url 2>/dev/null || echo unavailable)"
+SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo unavailable)"
 cat > "$DIST_DIR/build-metadata.txt" <<EOF
 Engine: Peacekeeper
-Source release baseline: v3.01 / Android source snapshot supplied by user
+Source remote: ${SOURCE_REMOTE}
+Source commit: ${SOURCE_COMMIT}
+Source baseline: Peacekeeper Android source fork
 UCI build date: ${UCI_DATE}
 Target: AArch64 Android API ${API}
 NDK: ${NDK_VERSION}
@@ -177,6 +181,7 @@ Optimization flags: -O3 -ffast-math -DNDEBUG -pthread -fno-strict-aliasing
 Network: src/default.nn
 Network bytes: ${ACTUAL_NET_BYTES}
 Network SHA-256: ${ACTUAL_NET_SHA256}
+Pinned fork network SHA-256: ${EXPECTED_NET_SHA256}
 SIMD backend: explicit AArch64 NEON intrinsics (no scalar NNUE fallback on AArch64)
 DotProd: not implemented; this source uses signed 16-bit NNUE arithmetic
 EOF
