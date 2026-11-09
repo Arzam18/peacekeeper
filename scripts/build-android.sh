@@ -9,10 +9,16 @@ API="24"
 ARCH="aarch64"
 TARGET="${ARCH}-linux-android${API}"
 EXPECTED_NET_BYTES="18883588"
-EXPECTED_NET_SHA256="${PEACEKEEPER_EXPECTED_NET_SHA256:-}"
+EXPECTED_NET_SHA256="13cc994d1ce31406f3000d4013b8a41c8ab47e4baa3ee3a54562e208de2c5e7b"
+UCI_DATE="${UCI_DATE:-}"
 OUTPUT="$ROOT/build/peacekeeper-android-arm64-neon"
 OBJ_DIR="$ROOT/build/obj"
 DIST_DIR="$ROOT/dist"
+
+if [[ ! "$UCI_DATE" =~ ^[0-9]{8}$ ]]; then
+  echo "ERROR: UCI_DATE must be supplied as YYYYMMDD (for example 20261109)." >&2
+  exit 2
+fi
 
 if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
   echo "ERROR: ANDROID_NDK_HOME is not set." >&2
@@ -34,6 +40,11 @@ for tool in "$CXX" "$READELF" "$OBJDUMP" "$STRIP"; do
   [[ -x "$tool" ]] || { echo "ERROR: required NDK tool not found: $tool" >&2; exit 2; }
 done
 
+BASELINE_MACROS="$(printf '' | "$CXX" -march=armv8-a+simd -dM -E -x c++ -)"
+grep -q '^#define __aarch64__' <<< "$BASELINE_MACROS" || { echo "ERROR: compiler is not targeting AArch64." >&2; exit 2; }
+grep -Eq '^#define __ARM_NEON(__)?([[:space:]]|$)' <<< "$BASELINE_MACROS" || { echo "ERROR: compiler does not enable NEON." >&2; exit 2; }
+echo "PASS: compiler target macros confirm AArch64 + NEON."
+
 NETWORK="$ROOT/src/default.nn"
 if [[ ! -f "$NETWORK" ]]; then
   cat >&2 <<'EOF'
@@ -50,18 +61,13 @@ if [[ "$ACTUAL_NET_BYTES" != "$EXPECTED_NET_BYTES" ]]; then
   exit 3
 fi
 ACTUAL_NET_SHA256="$(sha256sum "$NETWORK" | awk '{print $1}')"
-if [[ -n "$EXPECTED_NET_SHA256" ]]; then
-  if [[ "$ACTUAL_NET_SHA256" != "$EXPECTED_NET_SHA256" ]]; then
-    echo "ERROR: src/default.nn SHA-256 does not match PEACEKEEPER_EXPECTED_NET_SHA256." >&2
-    echo "Expected: $EXPECTED_NET_SHA256" >&2
-    echo "Actual:   $ACTUAL_NET_SHA256" >&2
-    exit 3
-  fi
-  echo "PASS: repository NNUE matches the explicitly pinned SHA-256."
-else
-  echo "NOTE: no NNUE hash pin configured; preserving the repository's src/default.nn."
-  echo "      Set PEACEKEEPER_EXPECTED_NET_SHA256 to enforce a specific network revision."
+if [[ "$ACTUAL_NET_SHA256" != "$EXPECTED_NET_SHA256" ]]; then
+  echo "ERROR: src/default.nn SHA-256 does not match the known Peacekeeper network." >&2
+  echo "Expected: $EXPECTED_NET_SHA256" >&2
+  echo "Actual:   $ACTUAL_NET_SHA256" >&2
+  exit 3
 fi
+echo "PASS: repository NNUE matches the pinned Peacekeeper network SHA-256."
 
 mkdir -p "$OBJ_DIR" "$DIST_DIR"
 printf '%s  %s\n' "$ACTUAL_NET_SHA256" 'src/default.nn' > "$DIST_DIR/default.nn.sha256"
@@ -76,12 +82,13 @@ CXXFLAGS=(
   -march=armv8-a+simd
   -fno-strict-aliasing
   -fPIE
-  -DVERSION=-1
+  -DVERSION=0
+  "-DPEACEKEEPER_BUILD_DATE=\"${UCI_DATE}\""
   '-DNETWORK_FILE="src/default.nn"'
 )
 
 printf '\n=== Peacekeeper Android ARM64 NEON ===\n'
-printf 'NDK: %s\nAPI: %s\nNetwork: %s bytes\nNetwork SHA-256: %s\n' "$NDK_VERSION" "$API" "$ACTUAL_NET_BYTES" "$ACTUAL_NET_SHA256"
+printf 'UCI date: %s\nNDK: %s\nAPI: %s\nNetwork: %s bytes\nNetwork SHA-256: %s\n' "$UCI_DATE" "$NDK_VERSION" "$API" "$ACTUAL_NET_BYTES" "$ACTUAL_NET_SHA256"
 sha256sum "$NETWORK"
 "$CXX" --version > "$DIST_DIR/compiler-version.txt"
 sed -n '1p' "$DIST_DIR/compiler-version.txt"
@@ -136,6 +143,9 @@ printf '\n=== Verify NEON arithmetic in nnue.o ===\n'
 for pattern in \
   '[[:space:]]add[[:space:]]+v[0-9]+\.8h' \
   '[[:space:]]sub[[:space:]]+v[0-9]+\.8h' \
+  '[[:space:]]smin[[:space:]]+v[0-9]+\.8h' \
+  '[[:space:]]smax[[:space:]]+v[0-9]+\.8h' \
+  '[[:space:]]mul[[:space:]]+v[0-9]+\.8h' \
   '[[:space:]]smull2?[[:space:]]+v[0-9]+\.4s' \
   '[[:space:]]addp[[:space:]]+v[0-9]+\.4s' \
   '[[:space:]]addv[[:space:]]+s[0-9]+,[[:space:]]v[0-9]+\.4s'; do
@@ -145,7 +155,7 @@ for pattern in \
     exit 6
   fi
 done
-echo "PASS: NNUE object contains 8x16-bit ADD/SUB, widening multiply, pairwise ADD, and horizontal ADD."
+echo "PASS: NNUE object contains vector ADD/SUB, signed min/max, 16-bit multiply, widening multiply, pairwise ADD, and horizontal ADD."
 
 printf '\n=== Verify runtime dependencies ===\n'
 "$READELF" -d "$OUTPUT" > "$DIST_DIR/dynamic-section.txt"
@@ -155,14 +165,31 @@ if grep -Fq 'libc++_shared.so' "$DIST_DIR/dynamic-section.txt"; then
 fi
 echo "PASS: no libc++_shared.so dependency."
 
-sha256sum "$OUTPUT" > "$OUTPUT.sha256"
-(
-  cd "$ROOT/build"
-  zip -9 -q peacekeeper-android-arm64-neon.zip "$(basename "$OUTPUT")" "$(basename "$OUTPUT").sha256"
-)
-cp "$OUTPUT.sha256" "$DIST_DIR/peacekeeper-android-arm64-neon.sha256"
+sha256sum "$OUTPUT" > "$DIST_DIR/peacekeeper-android-arm64-neon.sha256"
+cat > "$DIST_DIR/build-metadata.txt" <<EOF
+Engine: Peacekeeper
+Source release baseline: v3.01 / Android source snapshot supplied by user
+UCI build date: ${UCI_DATE}
+Target: AArch64 Android API ${API}
+NDK: ${NDK_VERSION}
+Architecture flags: -march=armv8-a+simd
+Optimization flags: -O3 -ffast-math -DNDEBUG -pthread -fno-strict-aliasing
+Network: src/default.nn
+Network bytes: ${ACTUAL_NET_BYTES}
+Network SHA-256: ${ACTUAL_NET_SHA256}
+SIMD backend: explicit AArch64 NEON intrinsics (no scalar NNUE fallback on AArch64)
+DotProd: not implemented; this source uses signed 16-bit NNUE arithmetic
+EOF
+
+# Ensure the chosen date is embedded in the executable's UCI identity.
+if ! strings "$OUTPUT" | grep -Fq "Peacekeeper v${UCI_DATE}"; then
+  echo "ERROR: requested UCI date was not found in the executable." >&2
+  exit 8
+fi
+echo "PASS: UCI build date is embedded in the executable."
 
 printf '\n=== Build complete ===\n'
 file "$OUTPUT"
-ls -lh "$OUTPUT" "$ROOT/build/peacekeeper-android-arm64-neon.zip"
-cat "$OUTPUT.sha256"
+ls -lh "$OUTPUT"
+cat "$DIST_DIR/peacekeeper-android-arm64-neon.sha256"
+cat "$DIST_DIR/build-metadata.txt"
