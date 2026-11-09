@@ -1,0 +1,12 @@
+Peacekeeper Android ARM64 NEON Stage 1 — modified files only
+
+Upload these files to the root of the Peacekeeper repository, preserving paths:
+ - .github/workflows/android.yml
+ - scripts/build-android.sh
+ - src/simd.h
+ - src/uci.h
+ - src/main.cpp
+ - ANDROID-ARM64-COMPILATION.md
+ - FALCON-ENGINE-COMPILATION-RULES.md
+
+The original `src/default.nn` is intentionally not included. Keep the correct network in the repository; the build script validates 18,883,588 bytes and SHA-256 13cc994d1ce31406f3000d4013b8a41c8ab47e4baa3ee3a54562e208de2c5e7b.
